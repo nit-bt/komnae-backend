@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+httpx
+pandas
+pyarrow
+huggingface_hub
+
+# Segmentation. khmercut is the light path; khmer-nlp-kcc pulls torch and
+# transformers (~800MB) so it only makes sense on a container host.
+khmercut
+khmer-nlp-kcc
