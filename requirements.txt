@@ -12,3 +12,4 @@ khmercut
 # khmer-nlp-kcc
 pypdf
 python-docx
+khmer-nltk

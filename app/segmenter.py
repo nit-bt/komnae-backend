@@ -58,7 +58,7 @@ class Segmenter:
             if self._impl is not None or self.backend == "regex":
                 return
             order = (
-                ["kcc", "khmercut", "regex"]
+                ["khmernltk", "kcc", "khmercut", "regex"]
                 if self.preferred == "auto"
                 else [self.preferred, "regex"]
             )
@@ -74,6 +74,14 @@ class Segmenter:
 
     @staticmethod
     def _load(name: str):
+        if name == "khmernltk":
+            # CRF-based, no torch, and it keeps compounds like លោកគ្រូ and
+            # កាលពី whole instead of handing the checker fragments that were
+            # never words the writer typed.
+            from khmernltk import word_tokenize
+
+            word_tokenize("ភាសាខ្មែរ")  # warm before the first request
+            return word_tokenize
         if name == "kcc":
             from khmer_nlp import KhmerNLP
 
@@ -97,7 +105,9 @@ class Segmenter:
         self._ensure_loaded()
 
         try:
-            if self.backend == "kcc":
+            if self.backend == "khmernltk":
+                pieces = [p for p in self._impl(text) if p.strip()]
+            elif self.backend == "kcc":
                 pieces = self._impl.segment(text).split()
             elif self.backend == "khmercut":
                 pieces = [p for p in self._impl(text) if p.strip()]
