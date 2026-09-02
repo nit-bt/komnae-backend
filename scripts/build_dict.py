@@ -23,6 +23,7 @@ from huggingface_hub import snapshot_download
 REPO = "seanghay/khmer-dictionary-44k"
 FREQ_REPO = "https://github.com/sbbic/khmerlbdict.git"
 FREQ_FILES = ["KHSV.txt", "KHOV.txt", "seafreq.txt"]
+SYMSPELL_REPO = "https://github.com/sungkhum/tiptap-khmer-line-breaker.git"
 OUT_DIR = "data"
 
 # Your existing 57k Chuon Nath list. Adjust if it lives elsewhere.
@@ -43,6 +44,69 @@ def clean(text):
         return ""
     text = unicodedata.normalize("NFC", text)
     return text.translate(INVISIBLES).strip()
+
+
+def build_symspell(words: set) -> dict:
+    """
+    A 76,847-word list with corpus frequencies, MIT licensed.
+
+    RAC lists headwords, which leaves real words missing: inflected forms,
+    compounds and proper nouns all get flagged as errors. This roughly doubles
+    coverage and carries better frequency data than the SBBIC corpus, which
+    matters because frequency is what breaks ties between candidates that are
+    equally far from what was typed.
+
+    Also returns variant spelling pairs, where both forms are correct and
+    neither should be flagged.
+    """
+    import subprocess
+    import tempfile
+
+    tmp = tempfile.mkdtemp()
+    try:
+        subprocess.run(
+            ["git", "clone", "-q", "--depth", "1", SYMSPELL_REPO, tmp + "/tk"],
+            check=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  could not fetch symspell data ({exc}); using RAC only")
+        return {}
+
+    base = os.path.join(tmp, "tk", "public", "dictionaries")
+    freq = {}
+
+    path = os.path.join(base, "km_symspell_dictionary.txt")
+    if os.path.exists(path):
+        added = 0
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip().split("\t")
+                if len(parts) >= 2 and parts[1].isdigit():
+                    word = clean(parts[0])
+                    if word and KHMER_RE.match(word):
+                        if word not in words:
+                            added += 1
+                        words.add(word)
+                        freq[word] = int(parts[1])
+        print(f"  symspell added {added:,} words RAC did not have")
+
+    # Variant spellings: both sides are correct, so both belong in the wordlist.
+    path = os.path.join(base, "khmer-multiple-spellings.txt")
+    if os.path.exists(path):
+        variants = 0
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                for part in line.split("="):
+                    word = clean(part)
+                    if word and KHMER_RE.match(word) and word not in words:
+                        words.add(word)
+                        variants += 1
+        print(f"  variant spellings added {variants:,} words")
+
+    return freq
 
 
 def build_frequencies():
@@ -146,7 +210,25 @@ def main():
     with open(entries_path, "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, separators=(",", ":"))
 
+    extra_freq = build_symspell(words)
+
     build_frequencies()
+
+    # Merge the richer symspell counts over the SBBIC ones.
+    freq_path = os.path.join(OUT_DIR, "freq.json")
+    merged = {}
+    if os.path.exists(freq_path):
+        with open(freq_path, encoding="utf-8") as f:
+            merged = json.load(f)
+    merged.update(extra_freq)
+    with open(freq_path, "w", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"  merged frequencies: {len(merged):,} words")
+
+    # words.txt was written before the symspell list was merged in, so rewrite
+    # it now that the set is complete.
+    with open(words_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(sorted(words)))
 
     print(f"\nwrote {words_path}    {len(words):,} words  "
           f"{os.path.getsize(words_path)/1e6:.1f} MB")
