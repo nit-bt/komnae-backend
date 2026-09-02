@@ -10,3 +10,5 @@ huggingface_hub
 # transformers (~800MB) so it only makes sense on a container host.
 khmercut
 khmer-nlp-kcc
+pypdf
+python-docx

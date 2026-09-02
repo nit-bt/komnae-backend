@@ -21,8 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import gemini
 from .checker import check
 from .dictionary import dictionary
+from . import extract as extraction
 from .models import (
-    CheckRequest, CheckResponse, Issue,
+    CheckRequest, CheckResponse, ExtractRequest, ExtractResponse, Issue,
     KeyCheckRequest, KeyCheckResponse, RefineRequest,
 )
 from .segmenter import segmenter
@@ -131,3 +132,18 @@ async def define(word: str) -> dict:
         "senses": senses,
         "source": "វចនានុក្រមខ្មែរ ២០២២, រាជបណ្ឌិត្យសភាកម្ពុជា",
     }
+
+
+@app.post("/api/extract", response_model=ExtractResponse)
+async def extract_document(request: ExtractRequest) -> ExtractResponse:
+    """Pull text out of an uploaded document so the editor can check it."""
+    try:
+        payload = extraction.decode_payload(request.data)
+        text, note = extraction.extract(payload, request.mime_type, request.filename)
+    except extraction.ExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("unexpected extraction failure")
+        raise HTTPException(status_code=500, detail="មិនអាចអានឯកសារនេះបានទេ") from exc
+
+    return ExtractResponse(text=text, note=note, characters=len(text))

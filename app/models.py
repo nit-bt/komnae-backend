@@ -54,3 +54,15 @@ class KeyCheckResponse(BaseModel):
     valid: bool
     model: str = ""
     error: str = ""
+
+
+class ExtractRequest(BaseModel):
+    data: str = Field(..., description="Base64 file contents, data: URL prefix allowed")
+    mime_type: str = Field("", description="Browser-reported MIME type")
+    filename: str = Field("", description="Original filename, used as a fallback")
+
+
+class ExtractResponse(BaseModel):
+    text: str
+    note: str = Field("", description="User-facing warning in Khmer, may be empty")
+    characters: int = 0
