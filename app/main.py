@@ -147,3 +147,32 @@ async def extract_document(request: ExtractRequest) -> ExtractResponse:
         raise HTTPException(status_code=500, detail="មិនអាចអានឯកសារនេះបានទេ") from exc
 
     return ExtractResponse(text=text, note=note, characters=len(text))
+
+
+@app.get("/api/suggest/{prefix}")
+async def suggest(prefix: str, limit: int = 10) -> dict:
+    """
+    Words beginning with the given prefix, for search-as-you-type.
+
+    Exact lookup is the wrong shape for a search box: a user typing សា has not
+    made a mistake, they are partway through a word. This returns headwords to
+    choose from, each with a short gloss so the list is scannable.
+    """
+    prefix = prefix.strip()
+    if len(prefix) < 1:
+        return {"prefix": prefix, "matches": []}
+
+    matches = sorted(w for w in dictionary.words if w.startswith(prefix))
+
+    # Shorter words first: they are the more likely intended headword, and
+    # longer compounds push the useful results off the end of the list.
+    matches.sort(key=len)
+
+    return {
+        "prefix": prefix,
+        "matches": [
+            {"word": w, "gloss": dictionary.gloss(w)[:80]}
+            for w in matches[:limit]
+        ],
+        "total": len(matches),
+    }
