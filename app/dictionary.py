@@ -15,6 +15,7 @@ import os
 from collections import defaultdict
 from functools import lru_cache
 
+from .confusion import confusion_penalty
 from .khmer import normalize, split_kcc
 
 log = logging.getLogger(__name__)
@@ -106,8 +107,15 @@ class Dictionary:
         In Khmer a single mistyped subscript changes several code points at
         once, so code-point distance ranks bad candidates too highly.
         """
-        target = split_kcc(normalize(word))
+        normalized = normalize(word)
+        target = split_kcc(normalized)
         n = len(target)
+
+        # Cluster distance is the right measure for multi-cluster words, but
+        # useless for short ones: ក្រូ, គ្រូ and កា are each a single cluster,
+        # so every candidate ties at distance 1 and the tie breaks
+        # alphabetically. Below this length, compare characters instead.
+        short = n <= 2
         if not n:
             return ()
 
@@ -115,16 +123,42 @@ class Dictionary:
 
         for length in range(max(1, n - LENGTH_WINDOW), n + LENGTH_WINDOW + 1):
             for candidate, clusters in self.buckets.get(length, ()):
-                distance = _bounded_edit_distance(target, clusters, MAX_DISTANCE)
+                distance = _bounded_edit_distance(
+                    list(normalized) if short else target,
+                    list(candidate) if short else clusters,
+                    MAX_DISTANCE,
+                )
                 if distance is None:
                     continue
                 # Prefer same first cluster: Khmer typos are far more often in
                 # the middle or end of a word than in the opening consonant.
-                prefix_penalty = 0 if clusters[0] == target[0] else 1
-                scored.append((distance, prefix_penalty, candidate))
+                # Rewarding a shared first cluster helps on long words, but
+                # backfires on single-cluster ones: ក្រូ is itself one cluster,
+                # so គ្រូ gets penalised for differing in exactly the character
+                # that is wrong, while ក្រូច is rewarded for being a longer
+                # word that happens to start the same.
+                prefix_penalty = 0 if (short or clusters[0] == target[0]) else 1
+
+                # Prefer candidates the same length as what was typed: a typo
+                # is usually a mistyped character, not a dropped one. Measured
+                # in characters for short words, where every candidate is a
+                # single cluster and cluster counts cannot separate them.
+                length_penalty = (
+                    abs(len(candidate) - len(normalized)) if short
+                    else abs(len(clusters) - n)
+                )
+
+                # ក and គ are the same consonant in different series, so
+                # ក្រូ -> គ្រូ is a far likelier slip than ក្រូ -> ក្រក even
+                # though both are one substitution.
+                confusion = confusion_penalty(normalized, candidate)
+
+                scored.append(
+                    (distance, confusion, length_penalty, prefix_penalty, candidate)
+                )
 
         scored.sort()
-        return tuple(word for _, _, word in scored[:limit])
+        return tuple(word for *_, word in scored[:limit])
 
 
 def _bounded_edit_distance(a: list[str], b: list[str], max_distance: int) -> int | None:
