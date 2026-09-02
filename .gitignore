@@ -6,3 +6,4 @@ data/words.txt
 data/entries.json
 .cache/
 *:Zone.Identifier
+data/freq.json

@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 DATA_DIR = os.environ.get("KOMNAE_DATA_DIR", "data")
 WORDS_PATH = os.path.join(DATA_DIR, "words.txt")
 ENTRIES_PATH = os.path.join(DATA_DIR, "entries.json")
+FREQ_PATH = os.path.join(DATA_DIR, "freq.json")
 
 # Candidates are only compared against words whose cluster-length is within
 # this much of the input. Cuts the search space by roughly 15x.
@@ -38,6 +39,11 @@ class Dictionary:
     def __init__(self, words_path: str = WORDS_PATH, entries_path: str = ENTRIES_PATH):
         self.words: set[str] = set()
         self.entries: dict[str, list[dict]] = {}
+        # Corpus frequencies from the SBBIC line-breaking dictionary. Two
+        # candidates one edit away are not equally likely: people mistype
+        # toward words they actually write. គ្រូ appears 2,543 times, ក្រក
+        # not at all.
+        self.freq: dict[str, int] = {}
         # normalized form -> original surface form, so we can look up words
         # that are spelled correctly but stored in a different cluster order
         self.normalized: dict[str, str] = {}
@@ -58,6 +64,12 @@ class Dictionary:
                 self.entries = json.load(f)
         else:
             log.warning("entries missing at %s, definitions disabled", entries_path)
+
+        if os.path.exists(FREQ_PATH):
+            with open(FREQ_PATH, encoding="utf-8") as f:
+                self.freq = json.load(f)
+        else:
+            log.warning("frequencies missing at %s, ranking will be weaker", FREQ_PATH)
 
         for word in self.words:
             clusters = split_kcc(word)
@@ -153,9 +165,13 @@ class Dictionary:
                 # though both are one substitution.
                 confusion = confusion_penalty(normalized, candidate)
 
-                scored.append(
-                    (distance, confusion, length_penalty, prefix_penalty, candidate)
-                )
+                # Negated so that higher frequency sorts first.
+                rarity = -self.freq.get(candidate, 0)
+
+                scored.append((
+                    distance, confusion, length_penalty,
+                    prefix_penalty, rarity, candidate,
+                ))
 
         scored.sort()
         return tuple(word for *_, word in scored[:limit])
