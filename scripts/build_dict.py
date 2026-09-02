@@ -21,6 +21,8 @@ import pandas as pd
 from huggingface_hub import snapshot_download
 
 REPO = "seanghay/khmer-dictionary-44k"
+FREQ_REPO = "https://github.com/sbbic/khmerlbdict.git"
+FREQ_FILES = ["KHSV.txt", "KHOV.txt", "seafreq.txt"]
 OUT_DIR = "data"
 
 # Your existing 57k Chuon Nath list. Adjust if it lives elsewhere.
@@ -41,6 +43,47 @@ def clean(text):
         return ""
     text = unicodedata.normalize("NFC", text)
     return text.translate(INVISIBLES).strip()
+
+
+def build_frequencies():
+    """
+    Corpus word frequencies from the SBBIC line-breaking dictionary.
+
+    Two candidates one edit away are not equally likely corrections: people
+    mistype toward words they actually write. គ្រូ appears 2,543 times in this
+    corpus and ក្រក not at all, which is what stops the ranking falling back
+    to alphabetical order among tied candidates.
+    """
+    import subprocess
+    import tempfile
+
+    tmp = tempfile.mkdtemp()
+    try:
+        subprocess.run(
+            ["git", "clone", "-q", "--depth", "1", FREQ_REPO, tmp + "/lb"],
+            check=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"  could not fetch frequencies ({exc}); ranking will be weaker")
+        return
+
+    freq = {}
+    for name in FREQ_FILES:
+        path = os.path.join(tmp, "lb", "src", name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                parts = line.rstrip("\n\r").split("\t")
+                if len(parts) >= 2 and parts[1].strip().isdigit():
+                    word = parts[0].strip()
+                    if word:
+                        freq[word] = max(freq.get(word, 0), int(parts[1]))
+
+    out = os.path.join(OUT_DIR, "freq.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(freq, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"wrote {out}  {len(freq):,} words with frequency")
 
 
 def main():
@@ -102,6 +145,8 @@ def main():
     entries_path = os.path.join(OUT_DIR, "entries.json")
     with open(entries_path, "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, separators=(",", ":"))
+
+    build_frequencies()
 
     print(f"\nwrote {words_path}    {len(words):,} words  "
           f"{os.path.getsize(words_path)/1e6:.1f} MB")
