@@ -1,3 +1,13 @@
+---
+title: Komnae API
+emoji: ✍️
+colorFrom: yellow
+colorTo: red
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Komnae — backend
 
 Khmer writing assistant API. Three layers, each catching what the one before it
