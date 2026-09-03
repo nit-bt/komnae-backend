@@ -23,7 +23,7 @@ from .checker import check
 from .dictionary import dictionary
 from . import extract as extraction
 from .models import (
-    CheckRequest, CheckResponse, ExtractRequest, ExtractResponse, Issue,
+    CheckRequest, CheckResponse, ExtractRequest, ExtractResponse, Issue, Token,
     KeyCheckRequest, KeyCheckResponse, RefineRequest,
 )
 from .segmenter import segmenter
@@ -78,23 +78,27 @@ async def check_text(
     request: CheckRequest,
     x_gemini_key: str | None = Header(default=None),
 ) -> CheckResponse:
-    issues, token_count, backend = check(request.text)
+    issues, token_count, backend, boundaries = check(request.text)
+    marks = [Token(start=a, end=b) for a, b in boundaries]
 
     if not request.use_ai:
-        return CheckResponse(issues=issues, tokens=token_count, backend=backend, ai="skipped")
+        return CheckResponse(issues=issues, tokens=token_count, backend=backend,
+                             boundaries=marks, ai="skipped")
 
     try:
         refined = await gemini.refine(request.text, issues, x_gemini_key)
-        return CheckResponse(issues=refined, tokens=token_count, backend=backend, ai="ok")
+        return CheckResponse(issues=refined, tokens=token_count, backend=backend,
+                             boundaries=marks, ai="ok")
     except gemini.NoKeyError as exc:
         return CheckResponse(issues=issues, tokens=token_count, backend=backend,
-                             ai="no_key", ai_error=str(exc))
+                             boundaries=marks, ai="no_key", ai_error=str(exc))
     except Exception as exc:  # noqa: BLE001
         # The local results are still good. Never fail the whole request
         # because the AI layer had a bad moment.
         log.warning("gemini pass failed: %s", exc)
         return CheckResponse(issues=issues, tokens=token_count, backend=backend,
-                             ai="error", ai_error=f"{type(exc).__name__}: {exc}"[:200])
+                             boundaries=marks, ai="error",
+                             ai_error=f"{type(exc).__name__}: {exc}"[:200])
 
 
 @app.post("/api/refine", response_model=CheckResponse)

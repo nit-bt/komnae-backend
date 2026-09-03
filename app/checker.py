@@ -117,4 +117,5 @@ def check(text: str) -> tuple[list[Issue], int, str]:
             confidence=0.9 if best else 0.4,
         ))
 
-    return issues, len(tokens), segmenter.backend or "regex"
+    boundaries = [(t.start, t.end) for t in tokens]
+    return issues, len(tokens), segmenter.backend or "regex", boundaries

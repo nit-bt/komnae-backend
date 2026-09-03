@@ -28,6 +28,13 @@ class Issue(BaseModel):
     confidence: float = 1.0
 
 
+class Token(BaseModel):
+    """A word boundary, for rendering break markers in the editor."""
+
+    start: int
+    end: int
+
+
 class CheckRequest(BaseModel):
     text: str = Field(..., max_length=20_000)
     use_ai: bool = Field(True, description="Run the Gemini pass as well")
@@ -36,6 +43,10 @@ class CheckRequest(BaseModel):
 class CheckResponse(BaseModel):
     issues: list[Issue]
     tokens: int
+    # Word boundaries, so the editor can show where segmentation fell.
+    # Rendered as overlays rather than inserted characters: putting real
+    # ZWSP into the text would shift every offset the underlines use.
+    boundaries: list[Token] = Field(default_factory=list)
     backend: str = Field("", description="Which segmenter served the request")
     ai: Literal["ok", "skipped", "no_key", "error", "timeout"] = "skipped"
     ai_error: str = ""

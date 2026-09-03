@@ -36,11 +36,17 @@ TIMEOUT = float(os.environ.get("GEMINI_TIMEOUT", "12"))
 MAX_ISSUES = 40
 
 SYSTEM_PROMPT = """\
-You are a Khmer proofreader. You check Khmer text for spelling, grammar and \
-word-choice errors.
+You are a Khmer spelling assistant. Your only job is to decide, for each \
+flagged word, whether it is misspelled and if so which candidate the writer \
+meant.
 
 You will receive the text, and a numbered list of words that a Khmer dictionary \
 did not recognise, each with candidate corrections drawn from that dictionary.
+
+Use the surrounding sentence to decide. A word is often one edit away from \
+several real words, and only the context tells you which was intended: a \
+candidate that fits the subject, tense and register of the sentence is the \
+right one.
 
 For each numbered word, decide one action:
   keep    - the word is fine. Proper nouns, names, place names, loanwords, \
@@ -49,13 +55,13 @@ brand names and modern coinages are fine even though the dictionary lacks them.
 LIST for that item. Do not invent a spelling that is not in its candidates.
   drop    - it is not a real error worth showing the user.
 
-Separately, report grammar or word-choice problems anywhere in the text. For \
-each, copy the problematic span EXACTLY as it appears in the text, character for \
-character, and give the corrected version.
+Do NOT rewrite the writer's wording. Do not change word order, tense, register \
+or phrasing. Do not suggest a better way to say something. Do not report \
+grammar or style problems. Correcting a spelling is the whole task: the writer \
+chose their words and you are only fixing how they are spelled.
 
 Write every `reason` in Khmer, in one short clause. Be conservative: a false \
-alarm annoys the writer more than a missed error. If the text is fine, return \
-empty lists."""
+alarm annoys the writer more than a missed error."""
 
 RESPONSE_SCHEMA = {
     "type": "object",
@@ -73,21 +79,8 @@ RESPONSE_SCHEMA = {
                 "required": ["index", "action"],
             },
         },
-        "additions": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "original": {"type": "string"},
-                    "suggestion": {"type": "string"},
-                    "reason": {"type": "string"},
-                    "type": {"type": "string", "enum": ["grammar", "style"]},
-                },
-                "required": ["original", "suggestion", "reason", "type"],
-            },
-        },
     },
-    "required": ["verdicts", "additions"],
+    "required": ["verdicts"],
 }
 
 
@@ -201,7 +194,6 @@ def _merge(text: str, judged: list[Issue], untouched: list[Issue], parsed: dict)
         }))
 
     result.extend(untouched)
-    result.extend(_locate_additions(text, parsed.get("additions", []), result))
 
     result.sort(key=lambda i: i.start)
     return result
