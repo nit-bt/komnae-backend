@@ -13,3 +13,5 @@ khmercut
 pypdf
 python-docx
 khmer-nltk
+opencv-python-headless
+pillow

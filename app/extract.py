@@ -53,10 +53,19 @@ def extract(data: bytes, mime_type: str, filename: str = "") -> tuple[str, str]:
     elif kind == "text":
         text, note = _from_text(data), ""
     elif kind == "image":
-        raise ExtractionError(
-            "ការអានអត្ថបទពីរូបភាពមិនទាន់ដំណើរការនៅឡើយទេ។ "
-            "សូមប្រើឯកសារ PDF ឬ Word ជំនួស។"
-        )
+        from .ocr import OcrUnavailable, read_image
+
+        try:
+            text = read_image(data)
+        except OcrUnavailable as exc:
+            raise ExtractionError("ការអានអត្ថបទពីរូបភាពមិនអាចប្រើបានទេ") from exc
+
+        if not text.strip():
+            raise ExtractionError(
+                "រកមិនឃើញអក្សរខ្មែរក្នុងរូបភាពនេះទេ។ "
+                "សូមថតឱ្យច្បាស់ និងមានពន្លឺគ្រប់គ្រាន់។"
+            )
+        note = "អត្ថបទបានមកពីរូបភាព សូមពិនិត្យមុនប្រើ"
     else:
         raise ExtractionError(
             "ប្រភេទឯកសារនេះមិនត្រូវបានទ្រទ្រង់ទេ។ សូមប្រើ PDF, Word ឬ អត្ថបទ។"
